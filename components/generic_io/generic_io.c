@@ -107,9 +107,12 @@ void generic_io_init(void) {
     //configure GPIO with the given settings
     gpio_config(&io_conf);
 
-    //attach isr handler
+    // attach isr handler
     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
     gpio_isr_handler_add(GPIO_INPUT_SW, gpio_isr_handler, NULL);
+
+    // turn off led
+    turn_light_off();
 
     xTaskCreate(&push_button_task, "push_button_task", 2048, NULL, 5, &push_button_task_handler);
 }

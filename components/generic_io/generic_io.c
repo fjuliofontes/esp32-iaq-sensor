@@ -9,6 +9,7 @@
 #include "http_post.h"
 
 TaskHandle_t push_button_task_handler = NULL;
+TaskHandle_t blink_task_handler = NULL;
 
 static const char *TAG = "generic-io";
 
@@ -113,10 +114,31 @@ void generic_io_init(void) {
     xTaskCreate(&push_button_task, "push_button_task", 2048, NULL, 5, &push_button_task_handler);
 }
 
+static void blink_task(void *pvparameters) {
+
+    int blink_period_ms = (int) pvparameters;
+
+    for (;;) {
+        turn_light_on();
+        vTaskDelay(pdMS_TO_TICKS(blink_period_ms));
+        turn_light_off();
+        vTaskDelay(pdMS_TO_TICKS(blink_period_ms));
+    }
+
+    vTaskDelete(NULL);
+}
+
 void turn_light_on(void) {
     gpio_set_level(GPIO_OUTPUT_LED, 1);
 }
 
 void turn_light_off(void) {
     gpio_set_level(GPIO_OUTPUT_LED, 0);
+}
+
+int create_blink_task(int blink_period_ms) {
+    if ( xTaskCreate(&blink_task, "blink_task", 1024, ( void * ) blink_period_ms, 3, &blink_task_handler) != pdPASS ) {
+        return pdFAIL;
+    } 
+    return pdPASS;
 }

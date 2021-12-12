@@ -24,6 +24,8 @@
 #include <wifi_provisioning/manager.h>
 #include <wifi_provisioning/scheme_ble.h>
 
+#include "generic_io.h"
+
 static const char *TAG = "wifi-prov";
 
 /* Signal Wi-Fi events on this event-group */
@@ -270,14 +272,18 @@ void wifi_prov_init(void)
         // wifi_prov_mgr_deinit();
 
         /* Wait for Wi-Fi provisioning */
+
+        // blink while in provisioning state
+        create_blink_task(300);
+
         EventBits_t xBits;
         do {
             xBits = xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_EVENT, false, true, portMAX_DELAY);
         } while ( (xBits & WIFI_CONNECTED_EVENT) != WIFI_CONNECTED_EVENT);
 
         /* Reboot to apply configuration */
-        ESP_LOGI(TAG, "Going to restart!");
-        vTaskDelay(pdMS_TO_TICKS(100));
+        ESP_LOGI(TAG, "Going to restart in 10 seconds!");
+        vTaskDelay(pdMS_TO_TICKS(10000));
 
         esp_restart();
 

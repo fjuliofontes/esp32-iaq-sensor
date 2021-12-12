@@ -15,5 +15,6 @@
 void generic_io_init(void);
 void turn_light_on(void);
 void turn_light_off(void);
+int create_blink_task(int blink_period_ms);
 
 #endif

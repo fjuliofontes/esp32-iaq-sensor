@@ -28,12 +28,6 @@
 
 static const char *TAG = "main";
 
-#define SPIN_TASK_PRIO      2
-
-void IRAM_ATTR vMysleep( TickType_t xExpectedIdleTime ) {
-    turn_light_off();
-}
-
 static void init_sntp(void) {
     sntp_setoperatingmode(SNTP_OPMODE_POLL);
     sntp_setservername(0, "pool.ntp.org");

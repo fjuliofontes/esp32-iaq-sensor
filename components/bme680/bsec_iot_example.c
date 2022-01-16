@@ -339,6 +339,26 @@ void state_save(const uint8_t *state_buffer, uint32_t length)
     nvs_close(my_handle);
 }
  
+
+void state_erase() {
+    
+    nvs_handle my_handle;
+    esp_err_t err;
+
+    ESP_LOGI(TAG,"Going to erase state.");
+
+    // Open
+    err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) return;
+
+    err = nvs_erase_all(my_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG,"Error while erasing!");
+    }
+    else {
+        ESP_LOGI(TAG,"State erased!");
+    }
+}
 /*!
  * @brief           Load library config from non-volatile memory
  *

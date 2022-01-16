@@ -34,7 +34,7 @@
 #define WEB_DEVICE_NAME_SIZE (sizeof("ESP32-000000000000") + 1)
 
 #define PUBLISH_SIZE (sizeof("{\"timestamp\":4098895716000,\"t\":100.99,\"h\":100.00,\"p\":10000.00,\"iaq\":500.00,\"evoc\":1000.00,\"eco2\":10000.00,\"a\":03}") + 1)
-#define PUBLISH_TEMPLATE "{\"timestamp\":%d,\"t\":%.2f,\"h\":%.2f,\"p\":%.2f,\"iaq\":%.2f,\"evoc\":%.2f,\"eco2\":%.2f,\"a\":%d}"
+#define PUBLISH_TEMPLATE "{\"timestamp\":%lu,\"t\":%.2f,\"h\":%.2f,\"p\":%.2f,\"iaq\":%.2f,\"evoc\":%.2f,\"eco2\":%.2f,\"a\":%d}"
 #define BOOTUP_TEMPLATE "{\"timestamp\":{\".sv\": \"timestamp\"},\"ip\":\"%d.%d.%d.%d\",\"ssid\":\"%s\",\"rssi\":%ld}"
 #define BOOTUP_TEMPLATE_SIZE (sizeof("{\"timestamp\":{\".sv\": \"timestamp\"},\"ip\":\"255.255.255.255\",\"ssid\":\"HUAWEI-E5776-D797\",\"rssi\":-255}") + 1)
 
@@ -223,10 +223,12 @@ static int synchronize_timestamps(void) {
     return pdPASS;
 }
 
-static uint32_t calibrate_timestamp(uint32_t value) {
+static time_t calibrate_timestamp(uint32_t value) {
     ESP_LOGI(TAG, "Received timestamp: %u Calibration timestamp: %u",value,calibration_esp_timer);
-    float diff = (calibration_esp_timer - value) / 1000;
-    return (uint32_t) (calibration_epoch - diff);
+    uint32_t diff = (float)(calibration_esp_timer - value) / 1000.0f;
+    ESP_LOGI(TAG,"The measure was %u sec ago. EPOCH: %lu",diff,calibration_epoch);
+    time_t corrected_timestamp = calibration_epoch - diff;
+    return corrected_timestamp;
 }
 
 static void https_request_task(void *pvparameters)

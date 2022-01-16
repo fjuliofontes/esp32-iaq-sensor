@@ -7,6 +7,7 @@
 
 #include "wifi_prov.h"
 #include "http_post.h"
+#include "bsec_iot_example.h"
 
 TaskHandle_t push_button_task_handler = NULL;
 TaskHandle_t blink_task_handler = NULL;
@@ -27,6 +28,9 @@ static void IRAM_ATTR gpio_isr_handler(void* arg) {
 void push_button_action(uint32_t pressed_time_ms) {
     // un-provision
     if (pressed_time_ms >= 5000) {
+        // erase bme680 state
+        state_erase();
+
         if (wifi_unprovision() != pdPASS) {
             ESP_LOGE(TAG,"Error while un-provisioning");
         } else {

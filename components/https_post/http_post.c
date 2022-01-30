@@ -162,6 +162,11 @@ void http_post_load_messages(void) {
     err = nvs_get_blob(my_handle, "backup", NULL, &required_size);
     if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) goto cleanup_and_exit;
 
+    if (required_size == 0) {
+        ESP_LOGI(TAG,"No measurements in EEPROM!");
+        goto cleanup_and_exit;
+    }
+
     buffer = pvPortMalloc(required_size);
     if ( buffer == NULL ) goto cleanup_and_exit; // no space left
 
@@ -172,7 +177,7 @@ void http_post_load_messages(void) {
     // add messages to the queue
     message_t msg;
     
-    for (size_t i = 0; i < required_size; i++ ) {
+    for (size_t i = 0; i < required_size/sizeof(message_t); i++ ) {
         memcpy(&msg,&buffer[i*sizeof(message_t)],sizeof(message_t));
         if (xQueueSend(msg_queue, (void *)&msg, 10) != pdPASS) break; // break if full
     }

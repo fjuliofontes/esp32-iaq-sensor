@@ -31,6 +31,9 @@ void push_button_action(uint32_t pressed_time_ms) {
         // erase bme680 state
         state_erase();
 
+        // erase stored measurements 
+        http_post_erase();
+
         if (wifi_unprovision() != pdPASS) {
             ESP_LOGE(TAG,"Error while un-provisioning");
         } else {

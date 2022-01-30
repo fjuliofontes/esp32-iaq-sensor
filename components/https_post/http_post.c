@@ -11,6 +11,9 @@
 #include "esp_system.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
+#include "esp_system.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 
 #include "lwip/err.h"
 #include "lwip/sockets.h"
@@ -38,6 +41,8 @@
 #define BOOTUP_TEMPLATE "{\"timestamp\":{\".sv\": \"timestamp\"},\"ip\":\"%d.%d.%d.%d\",\"ssid\":\"%s\",\"rssi\":%ld}"
 #define BOOTUP_TEMPLATE_SIZE (sizeof("{\"timestamp\":{\".sv\": \"timestamp\"},\"ip\":\"255.255.255.255\",\"ssid\":\"HUAWEI-E5776-D797\",\"rssi\":-255}") + 1)
 
+#define STORAGE_NAMESPACE "http-storage"
+
 static const char *TAG = "http-post";
 
 char WEB_DEVICE_NAME[WEB_DEVICE_NAME_SIZE] = {'\0'};
@@ -62,6 +67,127 @@ static uint32_t calibration_esp_timer = 0;
 extern const uint8_t server_root_cert_pem_start[] asm("_binary_server_root_cert_pem_start");
 extern const uint8_t server_root_cert_pem_end[]   asm("_binary_server_root_cert_pem_end");
 esp_tls_client_session_t *tls_client_session = NULL;
+
+static time_t calibrate_timestamp(uint32_t value);
+
+void http_post_erase(void) {
+    nvs_handle my_handle;
+    esp_err_t err;
+
+    ESP_LOGI(TAG,"Going to erase state.");
+
+    // Open
+    err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) goto exit_and_cleanup;
+
+    err = nvs_erase_all(my_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG,"Error while erasing!");
+    }
+    else {
+        ESP_LOGI(TAG,"State erased!");
+    }
+
+exit_and_cleanup:
+
+    // Close
+    nvs_close(my_handle);
+
+    return;
+}
+
+void http_post_save_messages(void) {
+    nvs_handle my_handle;
+    esp_err_t err;
+
+    uint8_t pendent_messages = (uint8_t)uxQueueMessagesWaiting(msg_queue);
+
+    message_t recv_msg;
+
+    uint8_t *buffer = NULL;
+
+    buffer = pvPortMalloc(sizeof(message_t) * pendent_messages);
+
+    if ( buffer == NULL ) return; // no space left 
+    // discard everything, and start over ...
+
+    for (uint8_t i = 0; i < pendent_messages; i++ ) {
+        if (xQueueReceive(msg_queue, (void *)&recv_msg, pdMS_TO_TICKS(10)) == pdTRUE) {
+            // update type
+            recv_msg.type = BME_READING_FROM_EEPROM;
+            // update timestamp
+            recv_msg.timestamp = calibrate_timestamp(recv_msg.timestamp);
+            // put inside the buffer
+            memcpy(&buffer[i*sizeof(message_t)],&recv_msg,sizeof(recv_msg));
+        } else {
+            // stop here and update
+            pendent_messages = i;
+            break;
+        }
+    }
+
+    // Open
+    err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) goto cleanup_and_exit;
+
+    // save
+    err = nvs_set_blob(my_handle, "backup", buffer, pendent_messages*sizeof(message_t) );
+    if (err != ESP_OK) goto cleanup_and_exit;
+
+    // Commit
+    err = nvs_commit(my_handle);
+    if (err != ESP_OK) goto cleanup_and_exit;
+
+cleanup_and_exit:
+    // close
+    nvs_close(my_handle);
+
+    if (buffer != NULL) vPortFree(buffer);
+
+    return;
+}
+
+void http_post_load_messages(void) {
+    nvs_handle my_handle;
+    esp_err_t err;
+    uint8_t *buffer = NULL;
+
+    // Open
+    err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) goto cleanup_and_exit;
+
+    // Read run time blob
+    size_t required_size = 0;  // value will default to 0, if not set yet in NVS
+    // obtain required memory space to store blob being read from NVS
+    err = nvs_get_blob(my_handle, "backup", NULL, &required_size);
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) goto cleanup_and_exit;
+
+    buffer = pvPortMalloc(required_size);
+    if ( buffer == NULL ) goto cleanup_and_exit; // no space left
+
+    // read from nvs
+    err = nvs_get_blob(my_handle, "backup", buffer, &required_size);
+    if (err != ESP_OK) goto cleanup_and_exit;
+
+    // add messages to the queue
+    message_t msg;
+    
+    for (size_t i = 0; i < required_size; i++ ) {
+        memcpy(&msg,&buffer[i*sizeof(message_t)],sizeof(message_t));
+        if (xQueueSend(msg_queue, (void *)&msg, 10) != pdPASS) break; // break if full
+    }
+
+    // delete from eeprom
+    if (required_size > 0) nvs_erase_all(my_handle);
+
+cleanup_and_exit:
+    // close
+    nvs_close(my_handle);
+
+    if (buffer != NULL) vPortFree(buffer);
+
+    return;
+}
 
 void https_post_add_message(message_t message) {
     xQueueSend(msg_queue, (void *)&message, 10);
@@ -245,10 +371,10 @@ static void https_request_task(void *pvparameters)
         if (uxQueueMessagesWaiting(msg_queue) > 0) {
 
             // try to connect to wifi
-            if (wifi_init_sta() == pdPASS) {
+            if (wifi_start_sta() == pdPASS) {
 
                 // synchronize timestamps
-                int attempts = 30; // approx. 1 minute 
+                int attempts = 150; // approx. 5 minute 
                 do {
                     ESP_LOGI(TAG, "Waiting for adjusting time ...");
                     vTaskDelay(2000 / portTICK_PERIOD_MS);
@@ -261,7 +387,7 @@ static void https_request_task(void *pvparameters)
                         payload,
                         sizeof(payload),
                         PUBLISH_TEMPLATE,
-                        calibrate_timestamp(rcv_msg.timestamp),
+                        rcv_msg.type == BME_NEW_READING ? calibrate_timestamp(rcv_msg.timestamp) : rcv_msg.timestamp,
                         rcv_msg.bme_temp,
                         rcv_msg.bme_humi,
                         rcv_msg.bme_press,
@@ -269,28 +395,43 @@ static void https_request_task(void *pvparameters)
                         rcv_msg.bme_evoc,
                         rcv_msg.bme_co2,
                         rcv_msg.accuracy
-                        );
+                    );
+
+                    // initialize return code
+                    int res = pdFAIL;
 
                     if (first_message == pdTRUE) {
-                        int res, attempts = 10;
+                        int attempts = 10;
                         do {
                             res = https_get_request_using_cacert_buf(payload,payload_size);
                             if (res != pdPASS) vTaskDelay(pdMS_TO_TICKS(100));
                         } while ( (res != pdPASS) && (attempts-- > 0) );
                         
                         // not the first message anymore
-                        if ( res == 0) {
+                        if ( res == pdPASS) {
                             first_message = pdFALSE;
                         }
 
                     } else {
 
-                        int res, attempts = 10;
+                        int attempts = 10;
                         do {
                             res = https_get_request_using_already_saved_session(payload,payload_size);
                             if (res != pdPASS) vTaskDelay(pdMS_TO_TICKS(100));
                         } while ( (res != pdPASS) && (attempts-- > 0) );
 
+                    }
+                    
+                    // 10 attempts without success ? 
+                    //  * server down? 
+                    //  * ESP tls issue? 
+                    if (res == pdFAIL) {
+                        // send back to the queue
+                        xQueueSend(msg_queue, (void *)&rcv_msg, 10);
+                        // backup messages
+                        http_post_save_messages();
+                        // reboot ESP
+                        esp_restart();
                     }
                 }
 
@@ -300,7 +441,7 @@ static void https_request_task(void *pvparameters)
             }
         }
 
-        // chached tls session ?
+        // cached tls session ?
         if (tls_client_session != NULL) {
             vPortFree(tls_client_session);
             tls_client_session = NULL;
@@ -324,6 +465,9 @@ int http_post_init(void) {
     esp_wifi_get_mac(WIFI_IF_STA, eth_mac);
     snprintf(WEB_DEVICE_NAME, sizeof(WEB_DEVICE_NAME), WEB_DEVICE_NAME_TEMPLATE,
              eth_mac[0], eth_mac[1], eth_mac[2], eth_mac[3], eth_mac[4], eth_mac[5]);
+
+    // load messages from eeprom if exist
+    http_post_load_messages();
 
     if ( xTaskCreate(&https_request_task, "https_get_task", 8192, NULL, 5, &http_post_task_handler) != pdPASS ) {
         return pdFAIL;

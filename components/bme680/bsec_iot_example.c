@@ -231,6 +231,7 @@ void output_ready(int64_t timestamp, float iaq, uint8_t iaq_accuracy, float temp
     }
 
     message_t message = {
+        .type = BME_NEW_READING,
         .timestamp = esp_timer_get_time() / 1000,
         .accuracy = iaq_accuracy,
         .bme_co2 = co2_equivalent,
@@ -275,16 +276,16 @@ uint32_t state_load(uint8_t *state_buffer, uint32_t n_buffer)
     // ...
     nvs_handle my_handle;
     esp_err_t err;
+    size_t required_size = 0;  // value will default to 0, if not set yet in NVS
 
     // Open
     err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
-    if (err != ESP_OK) return 0;
+    if (err != ESP_OK) goto exit_and_cleanup;
 
     // Read run time blob
-    size_t required_size = 0;  // value will default to 0, if not set yet in NVS
     // obtain required memory space to store blob being read from NVS
     err = nvs_get_blob(my_handle, "state", NULL, &required_size);
-    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) return 0;
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) goto exit_and_cleanup;
     
     // read from nvs
     if (required_size == 0) {
@@ -293,11 +294,13 @@ uint32_t state_load(uint8_t *state_buffer, uint32_t n_buffer)
         ESP_LOGI(TAG,"Loading %d bytes",required_size);
 
         err = nvs_get_blob(my_handle, "state", state_buffer, &required_size);
-        if (err != ESP_OK) return 0;
+        if (err != ESP_OK) goto exit_and_cleanup;
         for (int i = 0; i < required_size; i++) {
             ESP_LOGI(TAG,"%d: %d", i + 1, state_buffer[i]);
         }
     }
+
+exit_and_cleanup:
 
     // Close
     nvs_close(my_handle);
@@ -325,18 +328,22 @@ void state_save(const uint8_t *state_buffer, uint32_t length)
 
     // Open
     err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
-    if (err != ESP_OK) return;
+    if (err != ESP_OK) goto exit_and_cleanup;
 
     // set
     err = nvs_set_blob(my_handle, "state", state_buffer, length);
-    if (err != ESP_OK) return;
+    if (err != ESP_OK) goto exit_and_cleanup;
 
     // Commit
     err = nvs_commit(my_handle);
-    if (err != ESP_OK) return;
+    if (err != ESP_OK) goto exit_and_cleanup;
 
-    // close
+exit_and_cleanup:
+
+    // Close
     nvs_close(my_handle);
+
+    return;
 }
  
 
@@ -349,7 +356,7 @@ void state_erase() {
 
     // Open
     err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
-    if (err != ESP_OK) return;
+    if (err != ESP_OK) goto exit_and_cleanup;
 
     err = nvs_erase_all(my_handle);
     if (err != ESP_OK) {
@@ -358,6 +365,13 @@ void state_erase() {
     else {
         ESP_LOGI(TAG,"State erased!");
     }
+
+exit_and_cleanup:
+
+    // Close
+    nvs_close(my_handle);
+
+    return;
 }
 /*!
  * @brief           Load library config from non-volatile memory

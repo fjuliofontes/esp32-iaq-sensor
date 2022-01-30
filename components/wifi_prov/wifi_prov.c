@@ -25,17 +25,24 @@
 #include <wifi_provisioning/scheme_ble.h>
 
 #include "generic_io.h"
+#include "wifi_prov.h"
 
 static const char *TAG = "wifi-prov";
 
 /* Signal Wi-Fi events on this event-group */
 #define WIFI_CONNECTED_EVENT BIT0
+#define WIFI_STATE_DISCONNECTED 0
+#define WIFI_STATE_CONNECTED 1
 
 static EventGroupHandle_t wifi_event_group;
 
 #define PROV_TRANSPORT_BLE      "ble"
 #define PROV_MGR_MAX_RETRY_CNT 5
-#define WAIT_WIFI_CONNECTION_MAX_TIME (30*1000) // 30 sec
+#define WAIT_WIFI_CONNECTION_MAX_TIME (60*1000) // 60 sec - 1 minute
+
+void wifi_prov_init(void);
+
+static uint8_t wifi_target_state = WIFI_STATE_DISCONNECTED;
 
 /* Event handler for catching system events */
 static void event_handler(void* arg, esp_event_base_t event_base,
@@ -88,13 +95,21 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         /* Signal main application to continue execution */
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_EVENT);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGI(TAG, "Disconnected. Connecting to the AP again...");
-        esp_wifi_connect();
+        ESP_LOGI(TAG, "Disconnected.");
+
+        // connect again if required
+        if ( wifi_target_state == WIFI_STATE_CONNECTED) {
+            ESP_LOGI(TAG, "Connecting to the AP again...");
+            esp_wifi_connect();
+        }
     }
 }
 
-int wifi_init_sta(void)
+int wifi_start_sta(void)
 {
+    // set to connect
+    wifi_target_state = WIFI_STATE_CONNECTED;
+
     /* Start Wi-Fi in station mode */
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
@@ -105,12 +120,18 @@ int wifi_init_sta(void)
         return pdPASS;
     } else {
         // stop
-        esp_wifi_stop();
+        wifi_stop_sta();
+        // deinit 
+        esp_wifi_deinit();
+        // init again
+        wifi_prov_init();
+        
         return pdFAIL;
     }
 }
 
 void wifi_stop_sta(void) {
+    wifi_target_state = WIFI_STATE_DISCONNECTED;
     esp_wifi_stop();
 }
 
@@ -199,6 +220,9 @@ void wifi_prov_init(void)
     /* If device is not yet provisioned start provisioning service */
     if (!provisioned) {
         ESP_LOGI(TAG, "Starting provisioning");
+
+        // set to connect
+        wifi_target_state = WIFI_STATE_CONNECTED;
 
         /* What is the Device Service Name that we want
          * This translates to :

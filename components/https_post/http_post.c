@@ -113,10 +113,13 @@ void http_post_save_messages(void) {
 
     for (uint8_t i = 0; i < pendent_messages; i++ ) {
         if (xQueueReceive(msg_queue, (void *)&recv_msg, pdMS_TO_TICKS(10)) == pdTRUE) {
-            // update type
-            recv_msg.type = BME_READING_FROM_EEPROM;
-            // update timestamp
-            recv_msg.timestamp = calibrate_timestamp(recv_msg.timestamp);
+            // update only for new readings
+            if (recv_msg.type == BME_NEW_READING) {
+                // update type
+                recv_msg.type = BME_READING_FROM_EEPROM;
+                // update timestamp
+                recv_msg.timestamp = calibrate_timestamp(recv_msg.timestamp);
+            }
             // put inside the buffer
             memcpy(&buffer[i*sizeof(message_t)],&recv_msg,sizeof(recv_msg));
         } else {

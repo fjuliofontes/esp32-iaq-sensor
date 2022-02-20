@@ -50,7 +50,7 @@ Power consumption is still under improvement. With a battery of 2000mA the expec
 
 ### Dashboard
 <p align="center">
-<img src="media/dashboard/dash.png" width="400" height="208">
+<img src="media/dashboard/dash.gif" width="400" height="208">
 </p>
 
 ### Schematics

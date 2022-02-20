@@ -421,7 +421,7 @@ int bsec_iot_example_init(void)
     
     /* Call to the function which initializes the BSEC library 
      * Switch on low-power mode and provide no temperature offset */
-    ret = bsec_iot_init(BSEC_SAMPLE_RATE_ULP, 1.0f, bus_write, bus_read, custom_sleep, state_load, config_load);
+    ret = bsec_iot_init(BSEC_SAMPLE_RATE_ULP, 0.0f, bus_write, bus_read, custom_sleep, state_load, config_load);
     
     if (ret.bme680_status)
     {

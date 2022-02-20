@@ -39,6 +39,7 @@
 /*! @file bme680.c
  @brief Sensor driver for BME680 sensor */
 #include "bme680.h"
+#include "esp_log.h"
 
 /*!
  * @brief This internal API is used to read the calibrated data from the sensor.
@@ -903,6 +904,9 @@ static uint32_t calc_pressure(uint32_t pres_adc, const struct bme680_dev *dev)
 	var1 = ((32768 + var1) * (int32_t)dev->calib.par_p1) >> 15;
 	pressure_comp = 1048576 - pres_adc;
 	pressure_comp = (int32_t)((pressure_comp - (var2 >> 12)) * ((uint32_t)3125));
+
+	ESP_LOGI("bme680","%d %d",pressure_comp,var1);
+
 	if (pressure_comp >= BME680_MAX_OVERFLOW_VAL)
 		pressure_comp = ((pressure_comp / var1) << 1);
 	else

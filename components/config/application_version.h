@@ -1,0 +1,9 @@
+#ifndef APPLICATION_VERSION_H_
+#define APPLICATION_VERSION_H_
+
+#define PRODUCT_MAJOR 1
+#define PRODUCT_MINOR 0
+#define PRODUCT_BUILD 0
+
+#endif
+

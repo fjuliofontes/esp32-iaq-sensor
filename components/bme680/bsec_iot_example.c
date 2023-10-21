@@ -87,6 +87,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "driver/i2c.h"
 
 #include "bsec_integration.h"

@@ -102,7 +102,7 @@ void generic_io_init(void) {
 
     // SW
     //disable interrupt
-    io_conf.intr_type = GPIO_PIN_INTR_NEGEDGE;
+    io_conf.intr_type = GPIO_INTR_NEGEDGE;
     //set as output mode
     io_conf.mode = GPIO_MODE_INPUT;
     //bit mask of the pins that you want to set,e.g.GPIO18/19

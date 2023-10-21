@@ -13,6 +13,7 @@
 #include "esp_netif.h"
 #include "esp_system.h"
 #include "nvs_flash.h"
+#include "esp_timer.h"
 #include "nvs.h"
 
 #include "lwip/err.h"
@@ -37,7 +38,7 @@
 #define WEB_DEVICE_NAME_SIZE (sizeof("ESP32-000000000000") + 1)
 
 #define PUBLISH_SIZE (sizeof("{\"timestamp\":4098895716000,\"t\":100.99,\"h\":100.00,\"p\":10000.00,\"iaq\":500.00,\"evoc\":1000.00,\"eco2\":10000.00,\"a\":03}") + 1)
-#define PUBLISH_TEMPLATE "{\"timestamp\":%lu,\"t\":%.2f,\"h\":%.2f,\"p\":%.2f,\"iaq\":%.2f,\"evoc\":%.2f,\"eco2\":%.2f,\"a\":%d}"
+#define PUBLISH_TEMPLATE "{\"timestamp\":%lld,\"t\":%.2f,\"h\":%.2f,\"p\":%.2f,\"iaq\":%.2f,\"evoc\":%.2f,\"eco2\":%.2f,\"a\":%d}"
 #define BOOTUP_TEMPLATE "{\"timestamp\":{\".sv\": \"timestamp\"},\"ip\":\"%d.%d.%d.%d\",\"ssid\":\"%s\",\"rssi\":%ld}"
 #define BOOTUP_TEMPLATE_SIZE (sizeof("{\"timestamp\":{\".sv\": \"timestamp\"},\"ip\":\"255.255.255.255\",\"ssid\":\"HUAWEI-E5776-D797\",\"rssi\":-255}") + 1)
 
@@ -309,7 +310,7 @@ exit_with_error:
     ESP_LOGE(TAG,"Error while POSTING!");
 
 exit:
-    esp_tls_conn_delete(tls);
+    esp_tls_conn_destroy(tls);
 
     return retval;
 }
@@ -344,11 +345,11 @@ static int synchronize_timestamps(void) {
 
     // Is time set? If not, tm_year will be (1970 - 1900).
     if (timeinfo.tm_year < (2016 - 1900)) {
-        ESP_LOGI(TAG, "Time is not set yet. Current: %lu",now);
+        ESP_LOGI(TAG, "Time is not set yet. Current: %lld",now);
         return pdFAIL;
     }
     
-    ESP_LOGI(TAG, "Time set to: %lu",now);
+    ESP_LOGI(TAG, "Time set to: %lld",now);
 
     // calibrate
     calibration_epoch = now;
@@ -358,9 +359,9 @@ static int synchronize_timestamps(void) {
 }
 
 static time_t calibrate_timestamp(uint32_t value) {
-    ESP_LOGI(TAG, "Received timestamp: %u Calibration timestamp: %u",value,calibration_esp_timer);
+    ESP_LOGI(TAG, "Received timestamp: %lu Calibration timestamp: %lu",value,calibration_esp_timer);
     uint32_t diff = (float)(calibration_esp_timer - value) / 1000.0f;
-    ESP_LOGI(TAG,"The measure was %u sec ago. EPOCH: %lu",diff,calibration_epoch);
+    ESP_LOGI(TAG,"The measure was %lu sec ago. EPOCH: %lld",diff,calibration_epoch);
     time_t corrected_timestamp = calibration_epoch - diff;
     return corrected_timestamp;
 }

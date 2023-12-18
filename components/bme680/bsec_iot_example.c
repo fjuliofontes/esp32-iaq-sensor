@@ -94,7 +94,7 @@
 #include "bsec_iot_example.h"
 #include "bsec_serialized_configurations_iaq.h"
 
-#include "http_post.h"
+// #include "http_post.h"
 
 #define STORAGE_NAMESPACE "bsec-storage"
 static const char *TAG = "bsec_iot_example";
@@ -231,19 +231,19 @@ void output_ready(int64_t timestamp, float iaq, uint8_t iaq_accuracy, float temp
         esp_restart();
     }
 
-    message_t message = {
-        .type = BME_NEW_READING,
-        .timestamp = esp_timer_get_time() / 1000,
-        .accuracy = iaq_accuracy,
-        .bme_co2 = co2_equivalent,
-        .bme_evoc = breath_voc_equivalent,
-        .bme_humi = humidity,
-        .bme_press = pressure,
-        .bme_temp = temperature,
-        .bme_iaq = iaq
-    };
+    // message_t message = {
+    //     .type = BME_NEW_READING,
+    //     .timestamp = esp_timer_get_time() / 1000,
+    //     .accuracy = iaq_accuracy,
+    //     .bme_co2 = co2_equivalent,
+    //     .bme_evoc = breath_voc_equivalent,
+    //     .bme_humi = humidity,
+    //     .bme_press = pressure,
+    //     .bme_temp = temperature,
+    //     .bme_iaq = iaq
+    // };
 
-    https_post_add_message(message);
+    // https_post_add_message(message);
 
     ESP_LOGI(TAG,"temperature %.2f humidity %.2f pressure %.2f iaq %.2f",temperature,humidity,pressure,iaq);
 
@@ -251,7 +251,7 @@ void output_ready(int64_t timestamp, float iaq, uint8_t iaq_accuracy, float temp
         // restart counter
         message_counter = 0;
         // publish 
-        http_post_resume();
+        // http_post_resume();
     }
     
     // ...

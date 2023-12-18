@@ -1,12 +1,7 @@
-#ifndef WIFI_PROV_H_
-#define WIFI_PROV_H_
+#ifndef WIFI_PROV_BLE_H_
+#define WIFI_PROV_BLE_H_
 
-void wifi_prov_init(void);
-
-int wifi_start_sta(void);
-
-void wifi_stop_sta(void);
-
-int wifi_unprovision(void);
+void wifi_prov_start(void);
+void wifi_prov_reset(void);
 
 #endif

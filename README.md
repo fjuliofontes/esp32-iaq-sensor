@@ -18,6 +18,9 @@ You can use the kicad design files to replicate the final design.
 4. Run these commands:
 
 ```
+# Menu Config
+pio run -t menuconfig
+
 # Build project
 $ pio run
 

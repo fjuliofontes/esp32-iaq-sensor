@@ -24,10 +24,11 @@
 #include <sys/time.h>
 #include "esp_sntp.h"
 #include "esp_log.h"
+#include "esp_sleep.h"
 
 #include "wifi_prov.h"
 #include "bsec_iot_example.h"
-#include "http_post.h"
+// #include "http_post.h"
 #include "generic_io.h"
 
 /****************************************************** Defines *******************************************************/
@@ -52,29 +53,32 @@ void app_main(void)
     // init gpios
     generic_io_init();
 
+    // enter deep sleep
+    esp_deep_sleep_start();
+
     // wait until provisioned
-    wifi_prov_init();
+    wifi_prov_start();
 
     // init sntp
-    init_sntp();
+    // init_sntp();
 
     // init bme680
     if ( bsec_iot_example_init() != pdPASS ){
         ESP_LOGE(TAG,"Error while initing bme680");
     }
 
-    // init http post
-    if ( http_post_init() != pdPASS ){
-        ESP_LOGE(TAG,"Error while initing http_post");
-    }
+    // // init http post
+    // if ( http_post_init() != pdPASS ){
+    //     ESP_LOGE(TAG,"Error while initing http_post");
+    // }
 }
 
 /************************************************* Internal Functions *************************************************/
 static void init_sntp(void) {
-    sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    sntp_setservername(0, "pool.ntp.org");
-    sntp_setservername(1, "pt.pool.ntp.org");
-    sntp_init();
+    esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_setservername(1, "pt.pool.ntp.org");
+    esp_sntp_init();
 }
 
 static void init_nvs(void) {

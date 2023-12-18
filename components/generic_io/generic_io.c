@@ -6,7 +6,7 @@
 #include "driver/gpio.h"
 
 #include "wifi_prov.h"
-#include "http_post.h"
+// #include "http_post.h"
 #include "bsec_iot_example.h"
 
 TaskHandle_t push_button_task_handler = NULL;
@@ -31,18 +31,15 @@ void push_button_action(uint32_t pressed_time_ms) {
         // erase bme680 state
         state_erase();
 
-        // erase stored measurements 
-        http_post_erase();
+        // erase wifi prov
+        wifi_prov_reset();
 
-        if (wifi_unprovision() != pdPASS) {
-            ESP_LOGE(TAG,"Error while un-provisioning");
-        } else {
-            ESP_LOGI(TAG,"Un-provisioned!");
-            esp_restart();
-        }
+        // erase stored measurements 
+        // http_post_erase();
     } else {
+        esp_restart();
         // just wake-up and publish 
-        http_post_resume();
+        // http_post_resume();
     }
 }
 

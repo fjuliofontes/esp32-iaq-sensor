@@ -1,12 +1,3 @@
-/* Wi-Fi Provisioning Manager Example
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
-
 #include <stdio.h>
 #include <string.h>
 
@@ -18,35 +9,18 @@
 #include <esp_wifi.h>
 #include <esp_event.h>
 #include <nvs_flash.h>
-#include "esp_event.h"
-#include "esp_pm.h"
 
 #include <wifi_provisioning/manager.h>
 #include <wifi_provisioning/scheme_ble.h>
 
-#include "generic_io.h"
-#include "wifi_prov.h"
-
-static const char *TAG = "wifi-prov";
+static const char *TAG = "wifi_prov";
 
 /* Signal Wi-Fi events on this event-group */
-#define WIFI_CONNECTED_EVENT BIT0
-#define WIFI_STATE_DISCONNECTED 0
-#define WIFI_STATE_CONNECTED 1
-
+const int WIFI_CONNECTED_EVENT = BIT0;
 static EventGroupHandle_t wifi_event_group;
 
-#define PROV_TRANSPORT_BLE      "ble"
-#define PROV_MGR_MAX_RETRY_CNT 5
-#define WAIT_WIFI_CONNECTION_MAX_TIME (60*1000) // 60 sec - 1 minute
-
-void wifi_prov_init(void);
-
-static uint8_t wifi_target_state = WIFI_STATE_DISCONNECTED;
-
 /* Event handler for catching system events */
-static void event_handler(void* arg, esp_event_base_t event_base,
-                          int32_t event_id, void* event_data)
+static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
     static int retries;
     if (event_base == WIFI_PROV_EVENT) {
@@ -69,7 +43,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
                          (*reason == WIFI_PROV_STA_AUTH_ERROR) ?
                          "Wi-Fi station authentication failed" : "Wi-Fi access-point not found");
                 retries++;
-                if (retries >= PROV_MGR_MAX_RETRY_CNT) {
+                if (retries >= 3) {
                     ESP_LOGI(TAG, "Failed to connect with provisioned AP, reseting provisioned credentials");
                     wifi_prov_mgr_reset_sm_state_on_failure();
                     retries = 0;
@@ -87,59 +61,42 @@ static void event_handler(void* arg, esp_event_base_t event_base,
             default:
                 break;
         }
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT) {
+        switch (event_id) {
+            case WIFI_EVENT_STA_START:
+                esp_wifi_connect();
+                break;
+            case WIFI_EVENT_STA_DISCONNECTED:
+                ESP_LOGI(TAG, "Disconnected. Connecting to the AP again...");
+                esp_wifi_connect();
+                break;
+            default:
+                break;
+        }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Connected with IP Address:" IPSTR, IP2STR(&event->ip_info.ip));
         /* Signal main application to continue execution */
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_EVENT);
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGI(TAG, "Disconnected.");
-
-        // connect again if required
-        if ( wifi_target_state == WIFI_STATE_CONNECTED) {
-            ESP_LOGI(TAG, "Connecting to the AP again...");
-            esp_wifi_connect();
+    } else if (event_base == PROTOCOMM_TRANSPORT_BLE_EVENT) {
+        switch (event_id) {
+            case PROTOCOMM_TRANSPORT_BLE_CONNECTED:
+                ESP_LOGI(TAG, "BLE transport: Connected!");
+                break;
+            case PROTOCOMM_TRANSPORT_BLE_DISCONNECTED:
+                ESP_LOGI(TAG, "BLE transport: Disconnected!");
+                break;
+            default:
+                break;
         }
     }
 }
 
-int wifi_start_sta(void)
+static void wifi_init_sta(void)
 {
-    // set to connect
-    wifi_target_state = WIFI_STATE_CONNECTED;
-
     /* Start Wi-Fi in station mode */
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
-
-    EventBits_t xBits = xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_EVENT, false, true, pdMS_TO_TICKS(WAIT_WIFI_CONNECTION_MAX_TIME));
-
-    if ( (xBits & WIFI_CONNECTED_EVENT) == WIFI_CONNECTED_EVENT) {
-        return pdPASS;
-    } else {
-        // stop
-        wifi_stop_sta();
-        // deinit 
-        esp_wifi_deinit();
-        // init again
-        wifi_prov_init();
-        
-        return pdFAIL;
-    }
-}
-
-void wifi_stop_sta(void) {
-    wifi_target_state = WIFI_STATE_DISCONNECTED;
-    esp_wifi_stop();
-}
-
-int wifi_unprovision(void) {
-    if ( wifi_prov_mgr_reset_provisioning() == ESP_OK ) {
-        return pdPASS;
-    } 
-    return pdFAIL;
 }
 
 static void get_device_service_name(char *service_name, size_t max)
@@ -151,28 +108,8 @@ static void get_device_service_name(char *service_name, size_t max)
              ssid_prefix, eth_mac[3], eth_mac[4], eth_mac[5]);
 }
 
-// /* Handler for the optional provisioning endpoint registered by the application.
-//  * The data format can be chosen by applications. Here, we are using plain ascii text.
-//  * Applications can choose to use other formats like protobuf, JSON, XML, etc.
-//  */
-// esp_err_t custom_prov_data_handler(uint32_t session_id, const uint8_t *inbuf, ssize_t inlen,
-//                                           uint8_t **outbuf, ssize_t *outlen, void *priv_data)
-// {
-//     if (inbuf) {
-//         ESP_LOGI(TAG, "Received data: %.*s", inlen, (char *)inbuf);
-//     }
-//     char response[] = "SUCCESS";
-//     *outbuf = (uint8_t *)strdup(response);
-//     if (*outbuf == NULL) {
-//         ESP_LOGE(TAG, "System out of memory");
-//         return ESP_ERR_NO_MEM;
-//     }
-//     *outlen = strlen(response) + 1; /* +1 for NULL terminating byte */
 
-//     return ESP_OK;
-// }
-
-void wifi_prov_init(void)
+void wifi_prov_start(void)
 {
     /* Initialize TCP/IP */
     ESP_ERROR_CHECK(esp_netif_init());
@@ -183,6 +120,7 @@ void wifi_prov_init(void)
 
     /* Register our event handler for Wi-Fi, IP and Provisioning related events */
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_PROV_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(PROTOCOMM_TRANSPORT_BLE_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL));
 
@@ -221,9 +159,6 @@ void wifi_prov_init(void)
     if (!provisioned) {
         ESP_LOGI(TAG, "Starting provisioning");
 
-        // set to connect
-        wifi_target_state = WIFI_STATE_CONNECTED;
-
         /* What is the Device Service Name that we want
          * This translates to :
          *     - Wi-Fi SSID when scheme is wifi_prov_scheme_softap
@@ -232,90 +167,39 @@ void wifi_prov_init(void)
         char service_name[12];
         get_device_service_name(service_name, sizeof(service_name));
 
-        /* What is the security level that we want (0 or 1):
-         *      - WIFI_PROV_SECURITY_0 is simply plain text communication.
-         *      - WIFI_PROV_SECURITY_1 is secure communication which consists of secure handshake
-         *          using X25519 key exchange and proof of possession (pop) and AES-CTR
-         *          for encryption/decryption of messages.
-         */
+        /* Start provisioning service */
         wifi_prov_security_t security = WIFI_PROV_SECURITY_1;
-
-        /* Do we want a proof-of-possession (ignored if Security 0 is selected):
-         *      - this should be a string with length > 0
-         *      - NULL if not used
-         */
         const char *pop = "abcd1234";
-
-        /* What is the service key (could be NULL)
-         * This translates to :
-         *     - Wi-Fi password when scheme is wifi_prov_scheme_softap
-         *     - simply ignored when scheme is wifi_prov_scheme_ble
-         */
+        wifi_prov_security1_params_t *sec_params = pop;
         const char *service_key = NULL;
 
-        // /* This step is only useful when scheme is wifi_prov_scheme_ble. This will
-        //  * set a custom 128 bit UUID which will be included in the BLE advertisement
-        //  * and will correspond to the primary GATT service that provides provisioning
-        //  * endpoints as GATT characteristics. Each GATT characteristic will be
-        //  * formed using the primary service UUID as base, with different auto assigned
-        //  * 12th and 13th bytes (assume counting starts from 0th byte). The client side
-        //  * applications must identify the endpoints by reading the User Characteristic
-        //  * Description descriptor (0x2901) for each characteristic, which contains the
-        //  * endpoint name of the characteristic */
-        // uint8_t custom_service_uuid[] = {
-        //     /* LSB <---------------------------------------
-        //      * ---------------------------------------> MSB */
-        //     0xb4, 0xdf, 0x5a, 0x1c, 0x3f, 0x6b, 0xf4, 0xbf,
-        //     0xea, 0x4a, 0x82, 0x03, 0x04, 0x90, 0x1a, 0x02,
-        // };
-
-        // /* If your build fails with linker errors at this point, then you may have
-        //  * forgotten to enable the BT stack or BTDM BLE settings in the SDK (e.g. see
-        //  * the sdkconfig.defaults in the example project) */
-        // wifi_prov_scheme_ble_set_service_uuid(custom_service_uuid);
-
-        // /* An optional endpoint that applications can create if they expect to
-        //  * get some additional custom data during provisioning workflow.
-        //  * The endpoint name can be anything of your choice.
-        //  * This call must be made before starting the provisioning.
-        //  */
-        // wifi_prov_mgr_endpoint_create("custom-data");
-        /* Start provisioning service */
-        ESP_ERROR_CHECK(wifi_prov_mgr_start_provisioning(security, pop, service_name, service_key));
-
-        // /* The handler for the optional endpoint created above.
-        //  * This call must be made after starting the provisioning, and only if the endpoint
-        //  * has already been created above.
-        //  */
-        // wifi_prov_mgr_endpoint_register("custom-data", custom_prov_data_handler, NULL);
+        ESP_ERROR_CHECK(wifi_prov_mgr_start_provisioning(security, (const void *) sec_params, service_name, service_key));
 
         /* Uncomment the following to wait for the provisioning to finish and then release
          * the resources of the manager. Since in this case de-initialization is triggered
          * by the default event loop handler, we don't need to call the following */
         // wifi_prov_mgr_wait();
         // wifi_prov_mgr_deinit();
-
-        /* Wait for Wi-Fi provisioning */
-
-        // blink while in provisioning state
-        create_blink_task(300);
-
-        EventBits_t xBits;
-        do {
-            xBits = xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_EVENT, false, true, portMAX_DELAY);
-        } while ( (xBits & WIFI_CONNECTED_EVENT) != WIFI_CONNECTED_EVENT);
-
-        /* Reboot to apply configuration */
-        ESP_LOGI(TAG, "Going to restart in 10 seconds!");
-        vTaskDelay(pdMS_TO_TICKS(10000));
-
-        esp_restart();
-
+        /* Print QR code for provisioning */
     } else {
-        ESP_LOGI(TAG, "Already provisioned!");
+        ESP_LOGI(TAG, "Already provisioned, starting Wi-Fi STA");
 
         /* We don't need the manager as device is already provisioned,
          * so let's release it's resources */
         wifi_prov_mgr_deinit();
+
+        /* Start Wi-Fi station */
+        wifi_init_sta();
+    }
+
+    /* Wait for Wi-Fi connection */
+    xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_EVENT, true, true, portMAX_DELAY);
+}
+
+void wifi_prov_reset(void) {
+    esp_err_t err = wifi_prov_mgr_reset_provisioning();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error while un-provisioning!");
     }
 }
+

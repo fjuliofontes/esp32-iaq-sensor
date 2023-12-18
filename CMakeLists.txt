@@ -26,23 +26,23 @@ get_filename_component(
 )
 list(APPEND IDF_EXTRA_COMPONENT_DIRS ${EXTRA_COMPONENT_DIRS})
 
-#--------------------------------------
-# https_post
-#--------------------------------------
-get_filename_component(
-    EXTRA_COMPONENT_DIRS
-    "components/https_post" ABSOLUTE
-)
-list(APPEND IDF_EXTRA_COMPONENT_DIRS ${EXTRA_COMPONENT_DIRS})
+# #--------------------------------------
+# # https_post
+# #--------------------------------------
+# get_filename_component(
+#     EXTRA_COMPONENT_DIRS
+#     "components/https_post" ABSOLUTE
+# )
+# list(APPEND IDF_EXTRA_COMPONENT_DIRS ${EXTRA_COMPONENT_DIRS})
 
-#--------------------------------------
-# wifi_prov
-#--------------------------------------
-get_filename_component(
-    EXTRA_COMPONENT_DIRS
-    "components/wifi_prov" ABSOLUTE
-)
-list(APPEND IDF_EXTRA_COMPONENT_DIRS ${EXTRA_COMPONENT_DIRS})
+# #--------------------------------------
+# # wifi_prov
+# #--------------------------------------
+# get_filename_component(
+#     EXTRA_COMPONENT_DIRS
+#     "components/wifi_prov" ABSOLUTE
+# )
+# list(APPEND IDF_EXTRA_COMPONENT_DIRS ${EXTRA_COMPONENT_DIRS})
 
 #--------------------------------------
 # config

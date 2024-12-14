@@ -39,6 +39,7 @@
 #define GENERIC_SW_IO 13
 #define TIMEOUT_FOR_WAITING_WIFI_CONNECTION_MSEC (0.5 * 60 * 1000) // 30 sec
 #define TIMEOUT_FOR_WAITING_PROVISION_MSEC (2 * 60 * 1000)         // 2 min
+#define HOLD_BUTTON_FOR_RESETTING_MSEC 3000
 
 #define STR_LEN(x) (sizeof(x) - 1)
 #define IS_NUMBER(x) ((x >= 48) && (x <= 57))
@@ -49,8 +50,10 @@
 /****************************************************** Typedefs ******************************************************/
 typedef struct
 {
+    float rawTemperature;
     float temperature;
     float humidity;
+    float rawHumidity;
     float pressure;
     float iaq;
     float co2e;
@@ -85,8 +88,6 @@ const uint8_t bsec_config_iaq[] = {
 const char *pop = "iaq123";
 const char *service_key = NULL;
 
-const String serverName = "http://192.168.1.106:1880/update-sensor";
-
 /***************************************************** Variables ******************************************************/
 Bsec sensor;
 
@@ -97,9 +98,11 @@ RTC_DATA_ATTR bsec_results_t last_results = {0};
 RTC_DATA_ATTR wifi_prov_status_t wifi_prov_status = WIFI_PROV_UNKNOWN;
 
 bsec_virtual_sensor_t sensor_list[] = {
+    BSEC_OUTPUT_RAW_TEMPERATURE,
     BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
     BSEC_OUTPUT_RAW_PRESSURE,
     BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
+    BSEC_OUTPUT_RAW_HUMIDITY,
     BSEC_OUTPUT_IAQ,
     BSEC_OUTPUT_CO2_EQUIVALENT,
     BSEC_OUTPUT_BREATH_VOC_EQUIVALENT,
@@ -179,17 +182,21 @@ void setup()
 
 void loop()
 {
-    if (sensor.run())
+    int64_t since_start = esp_timer_get_time();
+
+    if (sensor.run(GetTimestamp()))
     {
-        LOG("Temperature compensated %.2f", sensor.temperature);
-        LOG("Humidity compensated %.2f", sensor.humidity);
+        LOG("Temperature raw: %.2f compensated %.2f", sensor.rawTemperature, sensor.temperature);
+        LOG("Humidity raw: %.2f compensated %.2f", sensor.rawHumidity, sensor.humidity);
         LOG("Pressure %.2f kPa", sensor.pressure / 1000);
         LOG("IAQ %.2f", sensor.iaq);
         LOG("CO2e %.2f PPM", sensor.co2Equivalent);
         LOG("VOCe %.2f PPM", sensor.breathVocEquivalent);
 
+        last_results.rawTemperature = sensor.rawTemperature;
         last_results.temperature = sensor.temperature;
         last_results.humidity = sensor.humidity;
+        last_results.rawHumidity = sensor.rawHumidity;
         last_results.pressure = sensor.pressure;
         last_results.iaq = sensor.iaq;
         last_results.co2e = sensor.co2Equivalent;
@@ -223,7 +230,10 @@ void loop()
         LOG("Saved state to RTC memory at %lld", sensor_state_time);
         CheckSensor();
 
-        time_us = (sensor.nextCall * 1000) - esp_timer_get_time();
+        // TODO: if calibration does not work we will need to measure BOOT_TIME
+        time_us = ((sensor.nextCall - GetTimestamp()) * 1000) - since_start;
+        
+        // time_us = ((sensor.nextCall - GetTimestamp()) * 1000) - since_start - BOOT_TIME;
         LOG("Deep sleep for %llu ms. BSEC next call at %llu ms.", time_us / 1000, sensor.nextCall);
         esp_sleep_enable_timer_wakeup(time_us);
         esp_sleep_enable_ext0_wakeup((gpio_num_t)GENERIC_SW_IO, 0);
@@ -325,6 +335,17 @@ static void handleWakeup(void)
     else if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0)
     {
         LOG("Woke up from GPIO.");
+
+        // is button still being pressed?
+        uint32_t press_start_time = millis();
+        while (digitalRead(GENERIC_SW_IO) == 0)
+        {
+            delay(10);
+        }
+        if ((millis() - press_start_time) >= HOLD_BUTTON_FOR_RESETTING_MSEC)
+        {
+            reset_provisioned = true;
+        }
 
         LOG("Temperature compensated %.2f", last_results.temperature);
         LOG("Humidity compensated %.2f", last_results.humidity);
@@ -480,9 +501,11 @@ static void PublishBSEC(bsec_results_t results)
         {
             char data[255] = {'\0'};
             http.addHeader("Content-Type", "application/json");
-            snprintf(data, sizeof(data), "{\"t\":%.2f,\"h\":%.2f,\"p\":%.2f,\"iaq\":%.2f,\"co2e\":%.2f,\"voce\":%.2f}",
+            snprintf(data, sizeof(data), "{\"t\":%.2f,\"rt\":%.2f,\"h\":%.2f,\"rh\":%.2f,\"p\":%.2f,\"iaq\":%.2f,\"co2e\":%.2f,\"voce\":%.2f}",
                      results.temperature,
+                     results.rawTemperature,
                      results.humidity,
+                     results.rawHumidity,
                      results.pressure / 1000,
                      results.iaq,
                      results.co2e,
